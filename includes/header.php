@@ -134,9 +134,6 @@ $last_name = $_SESSION['last_name'] ?? '';
                     <li class="nav-item">
                         <a class="nav-link" href="myprofile.php">My Profile</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="schedule.php">Schedule</a>
-                    </li>
                 </ul>
                 <div class="d-flex align-items-center">
                     <?php if ($isLoggedIn): ?>

@@ -17,6 +17,7 @@ $photo = '';
 
 // Get user data
 try {
+    // Get current user data
     $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -26,34 +27,21 @@ try {
         exit();
     }
     
-    // Use photo column if exists, otherwise use profile_image
+    // Get all enrolled students (exclude admin users)
+    $studentsStmt = $pdo->query("SELECT id, first_name, last_name, email, student_id, profile_image FROM users WHERE status = 'active' AND role = 'student' ORDER BY last_name, first_name");
+    $students = $studentsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $studentCount = count($students);
+    
+    // Get current user's photo if exists
     $photo = $user['photo'] ?? $user['profile_image'] ?? '';
-    // Don't use default.jpg as a real photo
     if ($photo === 'default.jpg') {
         $photo = '';
     }
     
-    // Get enrolled courses count
-    $courseStmt = $pdo->prepare("SELECT COUNT(*) as count FROM enrollments WHERE student_id = ? AND status = 'enrolled'");
-    $courseStmt->execute([$user_id]);
-    $courseCount = $courseStmt->fetch(PDO::FETCH_ASSOC)['count'];
-    
-    // Get recent enrollments
-    $recentStmt = $pdo->prepare("
-        SELECT c.course_code, c.course_name, c.schedule, e.enrolled_at 
-        FROM enrollments e 
-        JOIN courses c ON e.course_id = c.id 
-        WHERE e.student_id = ? 
-        ORDER BY e.enrolled_at DESC 
-        LIMIT 5
-    ");
-    $recentStmt->execute([$user_id]);
-    $recentCourses = $recentStmt->fetchAll(PDO::FETCH_ASSOC);
-    
 } catch (PDOException $e) {
     error_log("Dashboard error: " . $e->getMessage());
-    $courseCount = 0;
-    $recentCourses = [];
+    $students = [];
+    $studentCount = 0;
 }
 ?>
 <!DOCTYPE html>
@@ -196,9 +184,6 @@ try {
             <a href="myprofile.php">
                 <i class="fas fa-user-circle mr-3"></i>My Profile
             </a>
-            <a href="schedule.php">
-                <i class="fas fa-calendar-alt mr-3"></i>Class Schedule
-            </a>
             <a href="logout.php" class="mt-4 border-t border-teal-800 pt-4">
                 <i class="fas fa-sign-out-alt mr-3"></i>Logout
             </a>
@@ -234,90 +219,94 @@ try {
         <div class="card">
             <div class="flex flex-col md:flex-row items-center justify-between">
                 <div>
-                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Welcome back, <?php echo htmlspecialchars($first_name); ?>!</h2>
-                    <p class="text-gray-600">Here's an overview of your academic progress.</p>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Welcome, <?php echo htmlspecialchars($first_name); ?>!</h2>
+                    <p class="text-gray-600">Student Portal Dashboard</p>
                 </div>
                 <div class="mt-4 md:mt-0">
-                    <i class="fas fa-graduation-cap text-6xl text-teal-600 opacity-50"></i>
+                    <i class="fas fa-user-graduate text-6xl text-teal-600 opacity-50"></i>
                 </div>
             </div>
         </div>
 
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div class="stat-card">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-teal-100 text-sm mb-1">Enrolled Courses</p>
-                        <h3 class="text-3xl font-bold"><?php echo $courseCount; ?></h3>
-                    </div>
-                    <div class="bg-white bg-opacity-20 p-4 rounded-full">
-                        <i class="fas fa-book text-2xl"></i>
-                    </div>
+        <!-- Student Count Card -->
+        <div class="stat-card">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-teal-100 text-sm mb-1">Total Students Enrolled</p>
+                    <h3 class="text-3xl font-bold"><?php echo $studentCount; ?></h3>
                 </div>
-            </div>
-            
-            <div class="stat-card secondary">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-amber-100 text-sm mb-1">Upcoming Classes</p>
-                        <h3 class="text-3xl font-bold"><?php echo count($recentCourses); ?></h3>
-                    </div>
-                    <div class="bg-white bg-opacity-20 p-4 rounded-full">
-                        <i class="fas fa-calendar-check text-2xl"></i>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="stat-card success">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-green-100 text-sm mb-1">Academic Status</p>
-                        <h3 class="text-2xl font-bold">Active</h3>
-                    </div>
-                    <div class="bg-white bg-opacity-20 p-4 rounded-full">
-                        <i class="fas fa-check-circle text-2xl"></i>
-                    </div>
+                <div class="bg-white bg-opacity-20 p-4 rounded-full">
+                    <i class="fas fa-users text-2xl"></i>
                 </div>
             </div>
         </div>
 
-        <!-- Recent Courses -->
-        <div class="card">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold text-gray-800">Recent Enrollments</h3>
-                <a href="schedule.php" class="text-teal-600 hover:text-teal-700 text-sm font-medium">
-                    View All <i class="fas fa-arrow-right ml-1"></i>
-                </a>
-            </div>
-            
-            <?php if (count($recentCourses) > 0): ?>
-                <div class="space-y-3">
-                    <?php foreach ($recentCourses as $course): ?>
-                        <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <h4 class="font-semibold text-gray-800"><?php echo htmlspecialchars($course['course_code']); ?></h4>
-                                    <p class="text-sm text-gray-600 mt-1"><?php echo htmlspecialchars($course['course_name']); ?></p>
-                                    <div class="mt-2 flex items-center text-xs text-gray-500">
-                                        <i class="fas fa-clock mr-2"></i>
-                                        <span><?php echo htmlspecialchars($course['schedule'] ?? 'Schedule TBA'); ?></span>
-                                    </div>
-                                </div>
-                                <span class="px-3 py-1 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">
-                                    Enrolled
-                                </span>
+<!-- Students List -->
+<div class="card">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-gray-800">Enrolled Students</h2>
+        <span class="px-3 py-1 bg-teal-100 text-teal-800 rounded-full text-sm font-medium">
+            <?php echo $studentCount; ?> students
+        </span>
+    </div>
+
+    <?php if ($studentCount > 0): ?>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <?php foreach ($students as $student): ?>
+
+                <?php
+                    // SAME LOGIC AS TOP BAR
+                    $photo = $student['profile_image'] ?? '';
+                    $initials = strtoupper(
+                        substr($student['first_name'], 0, 1) .
+                        substr($student['last_name'], 0, 1)
+                    );
+                ?>
+
+                <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div class="flex items-center space-x-4">
+
+                        <?php if ($photo && file_exists($photo)): ?>
+                            <img src="<?php echo htmlspecialchars($photo); ?>"
+                                 alt="Profile"
+                                 class="h-12 w-12 rounded-full object-cover border-2 border-teal-600">
+                        <?php else: ?>
+                            <div class="h-12 w-12 rounded-full bg-gradient-to-r from-teal-600 to-emerald-700 flex items-center justify-center text-white font-bold">
+                                <?php echo $initials; ?>
                             </div>
+                        <?php endif; ?>
+
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-medium text-gray-900 truncate">
+                                <?php echo htmlspecialchars($student['first_name'] . ' ' . $student['last_name']); ?>
+                            </h3>
+
+                            <p class="text-sm text-gray-500 truncate">
+                                <i class="fas fa-id-card mr-1"></i>
+                                <?php echo htmlspecialchars($student['student_id']); ?>
+                            </p>
+
+                            <a href="mailto:<?php echo htmlspecialchars($student['email']); ?>"
+                               class="text-sm text-teal-600 hover:underline truncate block"
+                               title="<?php echo htmlspecialchars($student['email']); ?>">
+                                <i class="fas fa-envelope mr-1"></i>
+                                <?php echo htmlspecialchars($student['email']); ?>
+                            </a>
                         </div>
-                    <?php endforeach; ?>
+
+                    </div>
                 </div>
-            <?php else: ?>
-                <div class="text-center py-8 text-gray-500">
-                    <i class="fas fa-book-open text-4xl mb-3 opacity-50"></i>
-                    <p>No courses enrolled yet.</p>
-                </div>
-            <?php endif; ?>
+
+            <?php endforeach; ?>
         </div>
+    <?php else: ?>
+        <div class="text-center py-8 text-gray-500">
+            <i class="fas fa-user-graduate text-4xl mb-3 opacity-50"></i>
+            <p class="text-lg">No students found</p>
+        </div>
+    <?php endif; ?>
+</div>
+
 
         <!-- Quick Actions -->
         <div class="card">
@@ -326,18 +315,6 @@ try {
                 <a href="myprofile.php" class="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:border-teal-500 hover:bg-teal-50 transition-colors">
                     <i class="fas fa-user-edit text-2xl text-teal-600 mb-2"></i>
                     <span class="text-sm font-medium text-gray-700">Edit Profile</span>
-                </a>
-                <a href="schedule.php" class="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:border-teal-500 hover:bg-teal-50 transition-colors">
-                    <i class="fas fa-calendar text-2xl text-teal-600 mb-2"></i>
-                    <span class="text-sm font-medium text-gray-700">View Schedule</span>
-                </a>
-                <a href="#" class="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:border-teal-500 hover:bg-teal-50 transition-colors">
-                    <i class="fas fa-file-download text-2xl text-teal-600 mb-2"></i>
-                    <span class="text-sm font-medium text-gray-700">Download Forms</span>
-                </a>
-                <a href="#" class="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:border-teal-500 hover:bg-teal-50 transition-colors">
-                    <i class="fas fa-question-circle text-2xl text-teal-600 mb-2"></i>
-                    <span class="text-sm font-medium text-gray-700">Help & Support</span>
                 </a>
             </div>
         </div>

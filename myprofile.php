@@ -177,67 +177,130 @@ elseif (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] !==
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_profile'])) {
     try {
         // Get form data
-            $first_name = trim($_POST['first_name'] ?? $first_name);
-            $last_name = trim($_POST['last_name'] ?? $last_name);
-            $email = trim($_POST['email'] ?? $email);
-            $middle_name = trim($_POST['middle_name'] ?? '');
-            $home_address = trim($_POST['home_address'] ?? '');
-            $home_phone = trim($_POST['home_phone'] ?? '');
-            $date_of_birth = trim($_POST['date_of_birth'] ?? '');
-            $gender = trim($_POST['gender'] ?? '');
-            $place_of_birth = trim($_POST['place_of_birth'] ?? '');
-            $religion = trim($_POST['religion'] ?? '');
-            $guardian_first_name = trim($_POST['guardian_first_name'] ?? '');
-            $guardian_last_name = trim($_POST['guardian_last_name'] ?? '');
-            $guardian_address = trim($_POST['guardian_address'] ?? '');
+        $first_name = sanitize($_POST['first_name']);
+        $last_name = sanitize($_POST['last_name']);
+        $middle_name = !empty($_POST['middle_name']) ? sanitize($_POST['middle_name']) : null;
+        $email = sanitize($_POST['email']);
+        $home_address = !empty($_POST['home_address']) ? sanitize($_POST['home_address']) : null;
+        $phone = !empty($_POST['phone']) ? sanitize($_POST['phone']) : null;
+        $date_of_birth = !empty($_POST['date_of_birth']) ? $_POST['date_of_birth'] : null; // Don't sanitize date
+        $gender = !empty($_POST['gender']) ? sanitize($_POST['gender']) : null;
+        $place_of_birth = !empty($_POST['place_of_birth']) ? sanitize($_POST['place_of_birth']) : null;
+        $religion = !empty($_POST['religion']) ? sanitize($_POST['religion']) : null;
+        $guardian_first_name = !empty($_POST['guardian_first_name']) ? sanitize($_POST['guardian_first_name']) : null;
+        $guardian_last_name = !empty($_POST['guardian_last_name']) ? sanitize($_POST['guardian_last_name']) : null;
+        $guardian_address = !empty($_POST['guardian_address']) ? sanitize($_POST['guardian_address']) : null;
+
+        // Begin transaction
+        $pdo->beginTransaction();
+
+        // Update user data in database
+        $updateStmt = $pdo->prepare("
+            UPDATE users
+            SET
+                first_name = ?,
+                last_name = ?,
+                middle_name = ?,
+                email = ?,
+                date_of_birth = ?,
+                gender = ?,
+                place_of_birth = ?,
+                religion = ?,
+                phone = ?,
+                home_address = ?,
+                guardian_first_name = ?,
+                guardian_last_name = ?,
+                guardian_address = ?,
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+
+        $updateStmt->execute([
+            $first_name,
+            $last_name,
+            $middle_name,
+            $email,
+            $date_of_birth,
+            $gender,
+            $place_of_birth,
+            $religion,
+            $phone,
+            $home_address,
+            $guardian_first_name,
+            $guardian_last_name,
+            $guardian_address,
+            $user_id
+        ]);
+
+        // Handle profile photo upload if a file was uploaded
+        if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] === UPLOAD_ERR_OK) {
+            $upload_dir = 'uploads/profiles/';
+            if (!file_exists($upload_dir)) {
+                mkdir($upload_dir, 0777, true);
+            }
             
-            // Update user data in database
-            $updateStmt = $pdo->prepare("\n                UPDATE users \n                SET \n                    first_name = ?,\n                    last_name = ?,\n                    email = ?,\n                    middle_name = ?,\n                    home_address = ?,\n                    home_phone = ?,\n                    date_of_birth = ?,\n                    gender = ?,\n                    place_of_birth = ?,\n                    religion = ?,\n                    guardian_first_name = ?,\n                    guardian_last_name = ?,\n                    guardian_address = ?,\n                    updated_at = NOW()\n                WHERE id = ?\n            ");
+            $file_extension = pathinfo($_FILES['profile_photo']['name'], PATHINFO_EXTENSION);
+            $new_filename = 'profile_' . $user_id . '_' . time() . '.' . strtolower($file_extension);
+            $target_file = $upload_dir . $new_filename;
             
-            $updateStmt->execute([
-                $first_name,
-                $last_name,
-                $email,
-                $middle_name,
-                $home_address,
-                $home_phone,
-                $date_of_birth,
-                $gender,
-                $place_of_birth,
-                $religion,
-                $guardian_first_name,
-                $guardian_last_name,
-                $guardian_address,
-                $user_id
-            ]);
-            
-            // Update session variables if needed
-            $_SESSION['first_name'] = $first_name;
-            $_SESSION['last_name'] = $last_name;
-            $_SESSION['email'] = $email;
-            $_SESSION['middle_name'] = $middle_name;
-            
-            // Set success message and redirect
-            $_SESSION['success'] = "Profile updated successfully!";
-            header("Location: myprofile.php");
-            exit();
-            
-        } catch (PDOException $e) {
-            error_log("Error updating profile: " . $e->getMessage());
-            $error = "An error occurred while updating your profile. Please try again.";
+            if (move_uploaded_file($_FILES['profile_photo']['tmp_name'], $target_file)) {
+                // Delete old profile photo if it's not the default
+                $stmt = $pdo->prepare("SELECT profile_image FROM users WHERE id = ?");
+                $stmt->execute([$user_id]);
+                $old_photo = $stmt->fetchColumn();
+                
+                if ($old_photo && $old_photo !== 'default.jpg' && file_exists($old_photo)) {
+                    @unlink($old_photo);
+                }
+                
+                // Update profile image in database
+                $updatePhotoStmt = $pdo->prepare("UPDATE users SET profile_image = ? WHERE id = ?");
+                $updatePhotoStmt->execute([$target_file, $user_id]);
+                
+                // Update session with new photo path
+                $_SESSION['profile_image'] = $target_file;
+            }
         }
+
+        // Commit the transaction
+        $pdo->commit();
+
+        // Update session data
+        $_SESSION['first_name'] = $first_name;
+        $_SESSION['last_name'] = $last_name;
+        $_SESSION['email'] = $email;
+
+        $success = "Profile updated successfully!";
+        
+        // Refresh user data
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+        $stmt->execute([$user_id]);
+        $student = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+    } catch (Exception $e) {
+        // Rollback the transaction on error
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Error updating profile: " . $e->getMessage());
+        $error = "An error occurred while updating your profile. Please try again. Error: " . $e->getMessage();
     }
-    
+}
+
 // Fetch student profile data
 try {
+    // Fetch user data
     $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
     $student = $stmt->fetch(PDO::FETCH_ASSOC);
-    
+
     if ($student) {
+        $first_name = $student['first_name'] ?? '';
+        $last_name = $student['last_name'] ?? '';
         $middle_name = $student['middle_name'] ?? '';
-        $home_address = $student['home_address'] ?? $student['current_address'] ?? '';
-        $home_phone = $student['home_phone'] ?? $student['phone'] ?? '';
+        $email = $student['email'] ?? '';
+        $home_address = $student['home_address'] ?? '';
+        $home_phone = $student['home_phone'] ?? '';
         $date_of_birth = $student['date_of_birth'] ?? '';
         $gender = $student['gender'] ?? '';
         $place_of_birth = $student['place_of_birth'] ?? '';
@@ -245,12 +308,14 @@ try {
         $guardian_first_name = $student['guardian_first_name'] ?? '';
         $guardian_last_name = $student['guardian_last_name'] ?? '';
         $guardian_address = $student['guardian_address'] ?? '';
-        // Use photo column if exists, otherwise use profile_image
-        $photo = $student['photo'] ?? $student['profile_image'] ?? '';
-        // Don't use default.jpg as a real photo
-        if ($photo === 'default.jpg' || empty($photo)) {
-            $photo = '';
+        $photo = $student['profile_image'] ?? 'default.jpg';
+        
+        // Ensure the photo path is correct
+        if ($photo !== 'default.jpg' && !empty($photo) && !file_exists($photo)) {
+            $photo = 'default.jpg';
         }
+    } else {
+        $photo = 'default.jpg';
     }
 } catch (PDOException $e) {
     error_log("Error fetching profile data: " . $e->getMessage());
@@ -418,9 +483,6 @@ try {
             </a>
             <a href="myprofile.php" class="active">
                 <i class="fas fa-user-circle mr-3"></i>My Profile
-            </a>
-            <a href="schedule.php">
-                <i class="fas fa-calendar-alt mr-3"></i>Class Schedule
             </a>
             <a href="logout.php" class="mt-4 border-t border-teal-800 pt-4">
                 <i class="fas fa-sign-out-alt mr-3"></i>Logout
@@ -648,9 +710,9 @@ try {
                                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                             <i class="fas fa-phone text-gray-400"></i>
                                         </div>
-                                        <input type="tel" name="home_phone" value="<?php echo htmlspecialchars($home_phone); ?>"
-                                            class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm transition duration-200"
-                                            placeholder="Enter phone number">
+                                        <input type="tel" id="phone" name="phone" value="<?php echo htmlspecialchars($phone); ?>" 
+                                       class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-200 focus:outline-none transition duration-200"
+                                       placeholder="(123) 456-7890">
                                     </div>
                                 </div>
 

@@ -40,7 +40,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             
             // Insert into users table
             $stmt = $pdo->prepare("INSERT INTO users 
-                (student_id, email, password, first_name, last_name, date_of_birth, phone, current_address, status) 
+                (student_id, email, password, first_name, last_name, date_of_birth, phone, home_address, status) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')");
                 
             $stmt->execute([

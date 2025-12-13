@@ -20,7 +20,6 @@
                     <ul class="list-unstyled footer-links">
                         <li class="mb-2"><a href="dashboard.php">Dashboard</a></li>
                         <li class="mb-2"><a href="myprofile.php">My Profile</a></li>
-                        <li class="mb-2"><a href="schedule.php">Class Schedule</a></li>
                     </ul>
                 </div>
                 
